@@ -9,6 +9,7 @@ import {
   Clock,
   Settings,
   LogOut,
+  Plus,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/calendar", label: "Calendar", icon: Calendar, disabled: true },
+  { href: "/dashboard/calendar", label: "Calendar", icon: Calendar },
   { href: "/dashboard/services", label: "Services", icon: Scissors },
   { href: "/dashboard/schedule", label: "Schedule", icon: Clock },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
@@ -82,6 +83,12 @@ export function DashboardNav() {
         </div>
 
         <div className="flex items-center gap-3">
+          <Button size="sm" asChild>
+            <Link href="/dashboard/bookings/new">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">New Booking</span>
+            </Link>
+          </Button>
           {user && (
             <span className="text-sm text-muted-foreground hidden sm:block">
               {user.fullName}
