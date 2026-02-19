@@ -4,6 +4,13 @@ import { Business, Service, Booking } from "@/lib/models";
 import { createBookingSchema } from "@/lib/validations";
 import { handleApiError, ApiError } from "@/lib/api-error";
 import { getAvailableSlots } from "@/lib/availability";
+import { generateManageToken } from "@/lib/manage-token";
+import {
+  sendEmail,
+  bookingCreatedEmail,
+  formatBookingDate,
+  buildManageUrl,
+} from "@/lib/email";
 
 // POST /api/public/:slug/bookings
 export async function POST(
