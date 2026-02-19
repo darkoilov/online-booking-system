@@ -1,47 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { Business, Service, Booking } from "@/lib/models";
-import { createBookingSchema } from "@/lib/validations";
+import { manualBookingSchema } from "@/lib/validations";
+import { getAuthFromRequest, requireRole } from "@/lib/auth";
 import { handleApiError, ApiError } from "@/lib/api-error";
 import { getAvailableSlots } from "@/lib/availability";
-import { generateManageToken } from "@/lib/manage-token";
-import {
-  sendEmail,
-  bookingCreatedEmail,
-  formatBookingDate,
-  buildManageUrl,
-} from "@/lib/email";
 
-// POST /api/public/:slug/bookings
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ slug: string }> }
-) {
+// POST /api/bookings/manual
+export async function POST(request: NextRequest) {
   try {
     await connectDB();
-    const { slug } = await params;
+    const auth = getAuthFromRequest(request);
+    requireRole(auth, "OWNER", "STAFF");
+
+    if (!auth.businessId) {
+      throw new ApiError("No business associated with this account", 400);
+    }
+
     const body = await request.json();
-    const data = createBookingSchema.parse(body);
+    const data = manualBookingSchema.parse(body);
 
     // Load business
-    const business = await Business.findOne({ slug, isActive: true });
-    if (!business) {
-      throw new ApiError("Business not found.", 404);
+    const business = await Business.findById(auth.businessId);
+    if (!business || !business.isActive) {
+      throw new ApiError("Business not found or inactive", 404);
     }
 
     // Load service
     const service = await Service.findById(data.serviceId);
     if (
       !service ||
-      String(service.businessId) !== String(business._id) ||
+      String(service.businessId) !== auth.businessId ||
       !service.isActive
     ) {
-      throw new ApiError("Service not found or inactive.", 404);
+      throw new ApiError("Service not found or inactive", 404);
     }
 
-    // Atomic slot-still-free check: verify the chosen slot is still available
+    // Check slot availability
     const availableSlots = await getAvailableSlots(
-      String(business._id),
+      auth.businessId,
       data.date,
       data.serviceId
     );
@@ -52,7 +49,7 @@ export async function POST(
 
     if (!slotAvailable) {
       throw new ApiError(
-        "This time slot is no longer available. Please choose another.",
+        "This time slot is not available. Please choose another.",
         409
       );
     }
@@ -60,8 +57,6 @@ export async function POST(
     // Compute startAt and endAt in UTC
     const tz = business.timezone || "Europe/Skopje";
     const [startH, startM] = data.startTime.split(":").map(Number);
-
-    // Create date in business timezone then convert to UTC
     const localDateStr = `${data.date}T${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}:00`;
 
     // Use Intl to find UTC offset for this timezone
@@ -83,7 +78,6 @@ export async function POST(
       }
     }
 
-    // startAt in UTC = local time - offset
     const startAt = new Date(
       new Date(localDateStr).getTime() - offsetMinutes * 60000
     );
@@ -91,15 +85,13 @@ export async function POST(
       startAt.getTime() + service.durationMinutes * 60000
     );
 
-    // Determine status based on autoConfirm policy
-    const status = business.policies?.autoConfirm ? "CONFIRMED" : "PENDING";
-
+    // Manual bookings are always CONFIRMED
     const booking = await Booking.create({
       businessId: business._id,
       serviceId: service._id,
       startAt,
       endAt,
-      status,
+      status: "CONFIRMED",
       customer: {
         fullName: data.customer.fullName,
         phone: data.customer.phone,
@@ -111,7 +103,7 @@ export async function POST(
     return NextResponse.json(
       {
         booking: {
-          id: booking._id,
+          _id: booking._id,
           status: booking.status,
           startAt: booking.startAt,
           endAt: booking.endAt,
@@ -121,10 +113,7 @@ export async function POST(
           },
           customer: booking.customer,
         },
-        message:
-          status === "CONFIRMED"
-            ? "Your appointment is confirmed!"
-            : "Your booking is pending approval.",
+        message: "Booking created and confirmed.",
       },
       { status: 201 }
     );
